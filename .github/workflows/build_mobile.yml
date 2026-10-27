@@ -28,9 +28,13 @@ jobs:
       - name: Accept Android Licenses & Build APK
         run: |
           yes | flutter doctor --android-licenses || true
-          printf "flet==0.24.1\nrequests\n" > requirements.txt
-          pip install "flet==0.24.1" requests
-          flet build apk --verbose --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka"
+          printf "flet==0.25.2\nrequests\n" > requirements.txt
+          pip install "flet==0.25.2" requests
+          flet build apk --verbose \
+            --product "Fit AI" \
+            --project "fit-ai-app" \
+            --org "pl.twojaapka" \
+            --android-sdk-version 34
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
@@ -54,16 +58,31 @@ jobs:
 
       - name: Install Flet & Build Unsigned iOS IPA
         run: |
-          printf "flet==0.24.1\nrequests\n" > requirements.txt
-          pip install "flet==0.24.1" requests
-          flet build ipa --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka" || true
-          FLUTTER_DIR=$(find . -name "pubspec.yaml" -exec dirname {} \; | head -n 1)
+          printf "flet==0.25.2\nrequests\n" > requirements.txt
+          pip install "flet==0.25.2" requests
+          flet build ipa \
+            --product "Fit AI" \
+            --project "fit-ai-app" \
+            --org "pl.twojaapka" || true
+
+          # Szukamy folderu z pubspec.yaml wygenerowanego przez flet build
+          FLUTTER_DIR=$(find /tmp -name "pubspec.yaml" 2>/dev/null | head -n 1 | xargs dirname || true)
+          if [ -z "$FLUTTER_DIR" ]; then
+            FLUTTER_DIR=$(find . -name "pubspec.yaml" 2>/dev/null | head -n 1 | xargs dirname || true)
+          fi
+
           echo "Znaleziony folder projektu Flutter: $FLUTTER_DIR"
-          cd "$FLUTTER_DIR"
-          flutter build ios --release --no-codesign
-          mkdir -p "$GITHUB_WORKSPACE/build/ipa" Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/
-          zip -qq -r "$GITHUB_WORKSPACE/build/ipa/FitApp.ipa" Payload
+
+          if [ -n "$FLUTTER_DIR" ] && [ -f "$FLUTTER_DIR/pubspec.yaml" ]; then
+            cd "$FLUTTER_DIR"
+            flutter build ios --release --no-codesign
+            mkdir -p "$GITHUB_WORKSPACE/build/ipa" Payload
+            cp -r build/ios/iphoneos/Runner.app Payload/
+            zip -qq -r "$GITHUB_WORKSPACE/build/ipa/FitApp.ipa" Payload
+          else
+            echo "BŁĄD: Nie znaleziono pubspec.yaml – sprawdź logi flet build powyżej"
+            exit 1
+          fi
 
       - name: Upload iOS IPA
         uses: actions/upload-artifact@v4
