@@ -81,4 +81,3 @@ jobs:
         with:
           name: FitApp-iOS-IPA
           path: build/ipa/*.ipa
-          path: build/ipa/*.ipa
