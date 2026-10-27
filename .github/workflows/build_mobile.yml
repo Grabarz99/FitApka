@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -30,7 +30,7 @@ jobs:
           yes | flutter doctor --android-licenses || true
           printf "flet==0.24.1\nrequests\n" > requirements.txt
           pip install "flet==0.24.1" requests
-          flet build apk --yes --verbose --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka"
+          flet build apk --verbose --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka"
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
@@ -56,16 +56,17 @@ jobs:
         run: |
           printf "flet==0.24.1\nrequests\n" > requirements.txt
           pip install "flet==0.24.1" requests
-          flet build ipa --yes --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka" || true
-          cd build/flutter
+          flet build ipa --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka" || true
+          FLUTTER_DIR=$(find . -name "pubspec.yaml" -exec dirname {} \; | head -n 1)
+          echo "Znaleziony folder projektu Flutter: $FLUTTER_DIR"
+          cd "$FLUTTER_DIR"
           flutter build ios --release --no-codesign
-          mkdir -p ../ipa Payload
+          mkdir -p "$GITHUB_WORKSPACE/build/ipa" Payload
           cp -r build/ios/iphoneos/Runner.app Payload/
-          zip -qq -r ../ipa/FitApp.ipa Payload
+          zip -qq -r "$GITHUB_WORKSPACE/build/ipa/FitApp.ipa" Payload
 
       - name: Upload iOS IPA
         uses: actions/upload-artifact@v4
         with:
           name: FitApp-iOS-IPA
           path: build/ipa/*.ipa
-
