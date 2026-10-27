@@ -30,11 +30,7 @@ jobs:
           yes | flutter doctor --android-licenses || true
           printf "flet==0.25.2\nrequests\n" > requirements.txt
           pip install "flet==0.25.2" requests
-          flet build apk --verbose \
-            --product "Fit AI" \
-            --project "fit-ai-app" \
-            --org "pl.twojaapka" \
-            --android-sdk-version 34
+          flet build apk --verbose --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka"
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
@@ -60,12 +56,8 @@ jobs:
         run: |
           printf "flet==0.25.2\nrequests\n" > requirements.txt
           pip install "flet==0.25.2" requests
-          flet build ipa \
-            --product "Fit AI" \
-            --project "fit-ai-app" \
-            --org "pl.twojaapka" || true
+          flet build ipa --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka" || true
 
-          # Szukamy folderu z pubspec.yaml wygenerowanego przez flet build
           FLUTTER_DIR=$(find /tmp -name "pubspec.yaml" 2>/dev/null | head -n 1 | xargs dirname || true)
           if [ -z "$FLUTTER_DIR" ]; then
             FLUTTER_DIR=$(find . -name "pubspec.yaml" 2>/dev/null | head -n 1 | xargs dirname || true)
@@ -80,7 +72,7 @@ jobs:
             cp -r build/ios/iphoneos/Runner.app Payload/
             zip -qq -r "$GITHUB_WORKSPACE/build/ipa/FitApp.ipa" Payload
           else
-            echo "BŁĄD: Nie znaleziono pubspec.yaml – sprawdź logi flet build powyżej"
+            echo "BLAD: Nie znaleziono pubspec.yaml"
             exit 1
           fi
 
@@ -88,4 +80,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: FitApp-iOS-IPA
+          path: build/ipa/*.ipa
           path: build/ipa/*.ipa
