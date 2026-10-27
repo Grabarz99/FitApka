@@ -1,0 +1,47 @@
+name: Build Fit App (Android & iOS)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      - name: Install Flet & Build APK
+        run: |
+          pip install flet requests
+          flet build apk --yes
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: FitApp-Android-APK
+          path: build/apk/*.apk
+
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      - name: Install Flet & Build iOS IPA
+        run: |
+          pip install flet requests
+          flet build ipa --yes --no-codesign
+      - name: Upload iOS IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: FitApp-iOS-IPA
+          path: build/ipa/*.ipa
