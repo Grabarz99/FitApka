@@ -3,42 +3,52 @@ import json
 import os
 from datetime import datetime
 
+
 class FitDatabase:
     def __init__(self, db_path="fit_app.db"):
         self.db_path = db_path
         self.init_db()
+        self._migrate_model()
 
     def get_conn(self):
         return sqlite3.connect(self.db_path, check_same_thread=False)
 
+    def _migrate_model(self):
+        """Naprawia stary model gemini-2.5-flash na gemini-3.8-flash w bazie danych."""
+        old_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-exp", "gemini-1.5-flash"]
+        current = self.get_setting("model_name", "")
+        if current in old_models or current == "":
+            self.set_setting("model_name", "gemini-3.8-flash")
+
     def init_db(self):
         with self.get_conn() as conn:
             c = conn.cursor()
-            
-            # 1. Ustawienia i profil użytkownika (API Key, model, cel kaloryczny, waga)
+
             c.execute('''
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
                     value TEXT
                 )
             ''')
-            
-            # Domyślne ustawienia
+
             defaults = {
                 "api_key": "",
-                "model_name": "gemini-2.5-flash",
+                "model_name": "gemini-3.8-flash",
                 "target_kcal": "2200",
                 "target_protein": "160",
                 "target_fat": "70",
                 "target_carbs": "230",
                 "current_weight": "90.0",
                 "target_weight": "70.0",
-                "height": "163"
+                "height": "175",
+                "profile_name": "",
+                "profile_age": "25",
+                "profile_gender": "Mezczyzna",
+                "profile_activity": "Umiarkowanie aktywny",
             }
             for k, v in defaults.items():
                 c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
 
-            # 2. Dziennik posiłków (4 posiłki: Śniadanie, II Śniadanie, Obiad, Kolacja)
             c.execute('''
                 CREATE TABLE IF NOT EXISTS meals (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,7 +62,6 @@ class FitDatabase:
                 )
             ''')
 
-            # 3. Zapisane przepisy z AI / Internetu
             c.execute('''
                 CREATE TABLE IF NOT EXISTS recipes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,7 +75,6 @@ class FitDatabase:
                 )
             ''')
 
-            # 4. Lista zakupów
             c.execute('''
                 CREATE TABLE IF NOT EXISTS shopping_list (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,13 +83,12 @@ class FitDatabase:
                 )
             ''')
 
-            # 5. Dziennik treningów (Siłownia + Inne aktywności)
             c.execute('''
                 CREATE TABLE IF NOT EXISTS workouts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     date TEXT,
-                    activity_type TEXT, -- 'Siłownia' lub 'Inna aktywność'
-                    name TEXT,          -- Nazwa ćwiczenia lub aktywności (np. Hokej, Bieganie)
+                    activity_type TEXT,
+                    name TEXT,
                     sets INTEGER,
                     reps INTEGER,
                     weight_kg REAL,
@@ -91,7 +98,6 @@ class FitDatabase:
                 )
             ''')
 
-            # 6. Plany treningowe wygenerowane przez AI
             c.execute('''
                 CREATE TABLE IF NOT EXISTS ai_workout_plans (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,7 +107,6 @@ class FitDatabase:
                 )
             ''')
 
-            # 7. Historia wagi i postępów
             c.execute('''
                 CREATE TABLE IF NOT EXISTS weight_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -109,6 +114,7 @@ class FitDatabase:
                     weight REAL
                 )
             ''')
+
             conn.commit()
 
     # --- USTAWIENIA ---
@@ -122,7 +128,7 @@ class FitDatabase:
             conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
             conn.commit()
 
-    # --- POSIŁKI ---
+    # --- POSILKI ---
     def add_meal(self, date_str, meal_type, name, kcal, protein, fat, carbs):
         with self.get_conn() as conn:
             conn.execute('''
@@ -143,18 +149,22 @@ class FitDatabase:
             conn.execute("DELETE FROM meals WHERE id = ?", (meal_id,))
             conn.commit()
 
-    # --- PRZEPISY I LISTA ZAKUPÓW ---
+    # --- PRZEPISY I LISTA ZAKUPOW ---
     def save_recipe(self, title, kcal, protein, fat, carbs, ingredients_list, instructions):
         with self.get_conn() as conn:
             conn.execute('''
                 INSERT INTO recipes (title, kcal, protein, fat, carbs, ingredients_json, instructions)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (title, int(kcal), float(protein), float(fat), float(carbs), json.dumps(ingredients_list, ensure_ascii=False), instructions))
+            ''', (title, int(kcal), float(protein), float(fat), float(carbs),
+                  json.dumps(ingredients_list, ensure_ascii=False), instructions))
             conn.commit()
 
     def get_recipes(self):
         with self.get_conn() as conn:
-            rows = conn.execute("SELECT id, title, kcal, protein, fat, carbs, ingredients_json, instructions FROM recipes ORDER BY id DESC").fetchall()
+            rows = conn.execute(
+                "SELECT id, title, kcal, protein, fat, carbs, ingredients_json, instructions "
+                "FROM recipes ORDER BY id DESC"
+            ).fetchall()
             result = []
             for r in rows:
                 result.append({
@@ -167,12 +177,15 @@ class FitDatabase:
     def add_shopping_items(self, items_list):
         with self.get_conn() as conn:
             for item in items_list:
-                conn.execute("INSERT INTO shopping_list (item, checked) VALUES (?, 0)", (item,))
+                if item and item.strip():
+                    conn.execute("INSERT INTO shopping_list (item, checked) VALUES (?, 0)", (item.strip(),))
             conn.commit()
 
     def get_shopping_list(self):
         with self.get_conn() as conn:
-            return conn.execute("SELECT id, item, checked FROM shopping_list ORDER BY checked ASC, id DESC").fetchall()
+            return conn.execute(
+                "SELECT id, item, checked FROM shopping_list ORDER BY checked ASC, id DESC"
+            ).fetchall()
 
     def toggle_shopping_item(self, item_id, checked):
         with self.get_conn() as conn:
@@ -185,12 +198,16 @@ class FitDatabase:
             conn.commit()
 
     # --- TRENINGI I WAGA ---
-    def add_workout(self, date_str, activity_type, name, sets=0, reps=0, weight_kg=0.0, duration_min=0, kcal_burned=0, notes=""):
+    def add_workout(self, date_str, activity_type, name, sets=0, reps=0,
+                    weight_kg=0.0, duration_min=0, kcal_burned=0, notes=""):
         with self.get_conn() as conn:
             conn.execute('''
-                INSERT INTO workouts (date, activity_type, name, sets, reps, weight_kg, duration_min, kcal_burned, notes)
+                INSERT INTO workouts (date, activity_type, name, sets, reps,
+                    weight_kg, duration_min, kcal_burned, notes)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (date_str, activity_type, name, int(sets), int(reps), float(weight_kg), int(duration_min), int(kcal_burned), notes))
+            ''', (date_str, activity_type, name,
+                  int(sets or 0), int(reps or 0), float(weight_kg or 0),
+                  int(duration_min or 0), int(kcal_burned or 0), notes))
             conn.commit()
 
     def get_workouts_by_date(self, date_str):
@@ -210,12 +227,17 @@ class FitDatabase:
     def save_ai_plan(self, plan_name, plan_text):
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
         with self.get_conn() as conn:
-            conn.execute("INSERT INTO ai_workout_plans (created_at, plan_name, plan_text) VALUES (?, ?, ?)", (now, plan_name, plan_text))
+            conn.execute(
+                "INSERT INTO ai_workout_plans (created_at, plan_name, plan_text) VALUES (?, ?, ?)",
+                (now, plan_name, plan_text)
+            )
             conn.commit()
 
     def get_ai_plans(self):
         with self.get_conn() as conn:
-            return conn.execute("SELECT id, created_at, plan_name, plan_text FROM ai_workout_plans ORDER BY id DESC").fetchall()
+            return conn.execute(
+                "SELECT id, created_at, plan_name, plan_text FROM ai_workout_plans ORDER BY id DESC"
+            ).fetchall()
 
     def add_weight_log(self, date_str, weight):
         with self.get_conn() as conn:
