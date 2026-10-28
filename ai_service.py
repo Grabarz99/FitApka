@@ -7,38 +7,32 @@ class AIService:
     def __init__(self, db):
         self.db = db
 
-    def _call_gemini(self, prompt, image_path=None, json_mode=False, use_search=False):
+    def _call_gemini(self, prompt, image_path=None, json_mode=False):
         api_key = self.db.get_setting("api_key", "").strip()
         model = self.db.get_setting("model_name", "gemini-3.8-flash").strip()
 
         if not api_key:
             raise ValueError("Brak klucza API! Wklej swoj klucz w zakladce Ustawienia.")
-
         if not model:
             model = "gemini-3.8-flash"
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-
         parts = [{"text": prompt}]
 
         if image_path:
             try:
-                with open(image_path, "rb") as img_file:
-                    b64_data = base64.b64encode(img_file.read()).decode("utf-8")
+                with open(image_path, "rb") as f:
+                    b64 = base64.b64encode(f.read()).decode("utf-8")
                 ext = image_path.lower().split(".")[-1]
-                mime_map = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
-                mime_type = mime_map.get(ext, "image/jpeg")
-                parts.append({"inline_data": {"mime_type": mime_type, "data": b64_data}})
+                mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg",
+                        "png": "image/png", "webp": "image/webp"}.get(ext, "image/jpeg")
+                parts.append({"inline_data": {"mime_type": mime, "data": b64}})
             except Exception as e:
                 raise ValueError(f"Blad odczytu zdjecia: {e}")
 
         payload = {"contents": [{"parts": parts}]}
-
-        if json_mode and not use_search:
+        if json_mode:
             payload["generationConfig"] = {"responseMimeType": "application/json"}
-
-        if use_search:
-            payload["tools"] = [{"google_search": {}}]
 
         try:
             resp = requests.post(url, json=payload, timeout=60)
@@ -70,6 +64,7 @@ class AIService:
             text = "\n".join(lines).strip()
         return text
 
+    # 1. Analiza jedzenia z opisu lub zdjecia
     def analyze_food(self, description="", image_path=None):
         prompt = (
             "Przeanalizuj posilek: '" + description + "'. "
@@ -79,27 +74,22 @@ class AIService:
         res = self._call_gemini(prompt, image_path=image_path, json_mode=True)
         return json.loads(self._clean_json(res))
 
+    # 2. Kod kreskowy
     def get_product_by_barcode(self, barcode, weight_grams=100):
         url = f"https://world.openfoodfacts.org/api/v0/product/{barcode.strip()}.json"
         try:
             resp = requests.get(url, timeout=15)
             data = resp.json()
         except Exception as e:
-            raise ValueError(f"Blad polaczenia z baza produktow: {e}")
-
+            raise ValueError(f"Blad polaczenia: {e}")
         if data.get("status") != 1:
             raise ValueError("Nie znaleziono produktu o tym kodzie kreskowym.")
-
         prod = data["product"]
         nutr = prod.get("nutriments", {})
         factor = float(weight_grams) / 100.0
-
-        def sf(val):
-            try:
-                return float(val)
-            except (TypeError, ValueError):
-                return 0.0
-
+        def sf(v):
+            try: return float(v)
+            except: return 0.0
         return {
             "name": f"{prod.get('product_name', 'Produkt')} ({int(weight_grams)}g)",
             "kcal": int(sf(nutr.get("energy-kcal_100g", 0)) * factor),
@@ -111,6 +101,7 @@ class AIService:
             "sodium": round(sf(nutr.get("sodium_100g", 0)) * factor * 1000, 0),
         }
 
+    # 3. Przepisy
     def search_recipes(self, query_criteria):
         prompt = (
             "Przygotuj 3 przepisy pasujace do: \"" + query_criteria + "\". "
@@ -121,15 +112,12 @@ class AIService:
         res = self._call_gemini(prompt, json_mode=True)
         return json.loads(self._clean_json(res))
 
+    # 4. Plan treningowy
     def generate_workout_plan(self, goal_desc, recent_workouts):
-        if recent_workouts:
-            history_str = "\n".join([
-                f"- {w[0]}: [{w[1]}] {w[2]} | {w[3]}x{w[4]} ({w[5]}kg) | {w[6]} min"
-                for w in recent_workouts
-            ])
-        else:
-            history_str = "Brak historii treningow."
-
+        history = "\n".join([
+            f"- {w[0]}: [{w[1]}] {w[2]} | {w[3]}x{w[4]} ({w[5]}kg) | {w[6]} min"
+            for w in recent_workouts
+        ]) if recent_workouts else "Brak historii."
         prompt = (
             "Jestes trenerem silowym.\n"
             f"Uzytkownik: waga={self.db.get_setting('current_weight','?')}kg, "
@@ -138,8 +126,78 @@ class AIService:
             f"wiek={self.db.get_setting('profile_age','?')}lat, "
             f"plec={self.db.get_setting('profile_gender','?')}, "
             f"aktywnosc={self.db.get_setting('profile_activity','?')}\n"
-            f"Cel: \"{goal_desc}\"\n"
-            f"Historia:\n{history_str}\n\n"
+            f"Cel: \"{goal_desc}\"\nHistoria:\n{history}\n\n"
             "Napisz plan treningowy w Markdown z ciezarami, seriami, powtorzeniami i progresja."
         )
-        return self._call_gemini(prompt, json_mode=False)
+        return self._call_gemini(prompt)
+
+    # 5. Chatbot dietetyczny
+    def chat(self, user_message, chat_history):
+        history_text = ""
+        for role, msg, _ in reversed(list(chat_history)[:10]):
+            prefix = "Uzytkownik" if role == "user" else "AI"
+            history_text += f"{prefix}: {msg}\n"
+
+        prompt = (
+            "Jestes osobistym dietetykiem i trenerem fitness. Odpowiadaj po polsku, krotko i konkretnie.\n"
+            f"Dane uzytkownika: waga={self.db.get_setting('current_weight','?')}kg, "
+            f"cel={self.db.get_setting('target_weight','?')}kg, "
+            f"wzrost={self.db.get_setting('height','?')}cm, "
+            f"wiek={self.db.get_setting('profile_age','?')}lat, "
+            f"plec={self.db.get_setting('profile_gender','?')}, "
+            f"cel kaloryczny={self.db.get_setting('target_kcal','2200')}kcal\n\n"
+            f"Historia rozmowy:\n{history_text}\n"
+            f"Uzytkownik: {user_message}\n"
+            "Odpowiedz:"
+        )
+        return self._call_gemini(prompt)
+
+    # 6. Analiza diety
+    def analyze_diet(self, meals_data):
+        meals_text = "\n".join([
+            f"- {m[1]}: {m[2]} | {m[3]}kcal B:{m[4]}g T:{m[5]}g W:{m[6]}g"
+            for m in meals_data
+        ]) if meals_data else "Brak posilkow."
+        target_kcal = self.db.get_setting("target_kcal", "2200")
+        target_p = self.db.get_setting("target_protein", "160")
+        target_f = self.db.get_setting("target_fat", "70")
+        target_c = self.db.get_setting("target_carbs", "230")
+        prompt = (
+            "Jestes dietetykiem. Przeanalizuj dzisiejsza diete uzytkownika.\n"
+            f"Cele: {target_kcal}kcal, B:{target_p}g, T:{target_f}g, W:{target_c}g\n"
+            f"Zjedzone dzisiaj:\n{meals_text}\n\n"
+            "Oceń diete w punktach:\n"
+            "1. Czy cele sa osiagniete?\n"
+            "2. Co jest dobrze?\n"
+            "3. Co poprawic?\n"
+            "4. Propozycja na resztę dnia\n"
+            "Odpowiedz krotko po polsku, max 200 slow."
+        )
+        return self._call_gemini(prompt)
+
+    # 7. Codzienna motywacja i porada
+    def get_daily_motivation(self):
+        streak = self.db.get_streak()
+        weight = self.db.get_setting("current_weight", "?")
+        target = self.db.get_setting("target_weight", "?")
+        prompt = (
+            "Jestes motywujacym trenerem personalnym. "
+            f"Uzytkownik ma streak {streak} dni, waze {weight}kg, cel {target}kg. "
+            "Napisz krotka (2-3 zdania) motywujaca wiadomosc na dzis po polsku. "
+            "Dodaj 1 konkretna porade treningowa lub dietetyczna na dzis."
+        )
+        return self._call_gemini(prompt)
+
+    # 8. Kalkulator 1RM
+    def calculate_1rm(self, weight_kg, reps):
+        rm = round(float(weight_kg) * (1 + float(reps) / 30), 1)
+        return rm
+
+    # 9. Analiza zdjecia sylwetki
+    def analyze_progress_photo(self, image_path):
+        prompt = (
+            "Jestes trenerem personalnym. Przeanalizuj zdjecie sylwetki uzytkownika. "
+            "Opisz krotko (3-4 zdania) widoczne postepy, mocne strony i obszary do poprawy. "
+            "Odpowiedz po polsku, motywujaco."
+        )
+        return self._call_gemini(prompt, image_path=image_path)
