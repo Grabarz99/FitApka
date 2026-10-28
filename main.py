@@ -869,18 +869,7 @@ def main(page: ft.Page):
     # =========================================================================
     # ZAKŁADKA 5: USTAWIENIA + PROFIL OSOBY
     # =========================================================================
-    api_key_field = ft.TextField(
-        label="Klucz Google Gemini API",
-        password=True,
-        can_reveal_password=True,
-        value=db.get_setting("api_key"),
-        bgcolor="#1E1E2A", border_color="#3A3A4A",
-        focused_border_color="#00E676", border_radius=12,
-    )
     
-        bgcolor="#1E1E2A", border_color="#3A3A4A",
-        focused_border_color="#00E676", border_radius=12,
-    )
 
     # Profil osoby
     profile_name = ft.TextField(
@@ -1028,7 +1017,8 @@ def main(page: ft.Page):
                 ], spacing=8),
                 api_key_field,
                 model_field,
-                
+                ft.Text(
+                    "Modele: gemini-2.0-flash-exp (zalecany) | gemini-3.8-flash | gemini-1.5-flash",
                     size=11, color="#666666", italic=True
                 ),
             ])
