@@ -108,7 +108,7 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
+          flutter-version: '3.27.0'
           channel: 'stable'
 
       - name: Install system dependencies
@@ -123,7 +123,6 @@ jobs:
         run: |
           printf "flet==0.25.2\nrequests\n" > requirements.txt
           pip install "flet==0.25.2" requests
-          yes | flutter doctor --android-licenses || true
           flet build web --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka" --verbose || true
           # Fallback: bezposredni build Flutter web
           if [ ! -d "build/web" ]; then
