@@ -108,8 +108,7 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.29.3'
-          channel: 'stable'
+          channel: 'master'
 
       - name: Install system dependencies
         run: |
@@ -123,21 +122,7 @@ jobs:
         run: |
           printf "flet==0.25.2\nrequests\n" > requirements.txt
           pip install "flet==0.25.2" requests
-          flet build web --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka" --verbose || true
-          # Fallback: bezposredni build Flutter web
-          if [ ! -d "build/web" ]; then
-            echo "Probuje fallback Flutter web build..."
-            FLUTTER_DIR=$(find /tmp -name "pubspec.yaml" 2>/dev/null | head -n 1 | xargs dirname || true)
-            if [ -z "$FLUTTER_DIR" ]; then
-              FLUTTER_DIR=$(find . -name "pubspec.yaml" 2>/dev/null | head -n 1 | xargs dirname || true)
-            fi
-            if [ -n "$FLUTTER_DIR" ] && [ -f "$FLUTTER_DIR/pubspec.yaml" ]; then
-              cd "$FLUTTER_DIR"
-              flutter build web --release
-              mkdir -p "$GITHUB_WORKSPACE/build/web"
-              cp -r build/web/. "$GITHUB_WORKSPACE/build/web/"
-            fi
-          fi
+          flet build web --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka" --verbose
 
       - name: Prepare GitHub Pages output
         run: |
