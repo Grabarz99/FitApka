@@ -1,10 +1,11 @@
-name: Build Fit App (Android & Web)
+name: Build Fit App (Android & iOS & Web)
 
 on:
   workflow_dispatch:
   push:
     branches: [ main, master ]
 
+# Uprawnienia do publikacji GitHub Pages
 permissions:
   contents: read
   pages: write
@@ -36,8 +37,8 @@ jobs:
       - name: Accept Android Licenses & Build APK
         run: |
           yes | flutter doctor --android-licenses || true
-          printf "flet==0.25.2\n" > requirements.txt
-          pip install "flet==0.25.2"
+          printf "flet==0.25.2\nrequests\n" > requirements.txt
+          pip install "flet==0.25.2" requests
           flet build apk --verbose --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka"
 
       - name: Upload Android APK
@@ -47,10 +48,10 @@ jobs:
           path: build/apk/*.apk
 
   # ============================================================
-  # JOB 2: WEB (Dla iPhone 16 przez GitHub Pages)
+  # JOB 2: iOS IPA
   # ============================================================
-  build-web:
-    runs-on: ubuntu-latest
+  build-ios:
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
@@ -63,48 +64,37 @@ jobs:
           flutter-version: '3.24.5'
           channel: 'stable'
 
-      - name: Enable Flutter Web & Precache
+      - name: Install Flet & Build Unsigned iOS IPA
         run: |
-          flutter config --enable-web
-          flutter precache --web
+          printf "flet==0.25.2\nrequests\n" > requirements.txt
+          pip install "flet==0.25.2" requests
+          flet build ipa --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka" || true
 
-      - name: Install Flet & Build Web (Pin package:web to 1.0.0)
-        run: |
-          printf "flet==0.25.2\n" > requirements.txt
-          pip install "flet==0.25.2"
-          flet build web --base-url /FitApka/ --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka" || true
+          FLUTTER_DIR=$(find /tmp -name "pubspec.yaml" 2>/dev/null | head -n 1 | xargs dirname || true)
+          if [ -z "$FLUTTER_DIR" ]; then
+            FLUTTER_DIR=$(find . -name "pubspec.yaml" 2>/dev/null | head -n 1 | xargs dirname || true)
+          fi
 
-          python3 -c '
-          import pathlib, re
-          p = pathlib.Path("build/flutter/pubspec.yaml")
-          txt = p.read_text()
-          txt = re.sub(r"(^\s*web:\s*).*$", r"\g<1>1.0.0", txt, flags=re.M)
-          p.write_text(txt)
-          print("Zablokowano web: 1.0.0 w pubspec.yaml")
-          '
+          echo "Znaleziony folder projektu Flutter: $FLUTTER_DIR"
 
-          cd build/flutter
-          flutter pub get
-          flutter build web --release --base-href "/FitApka/"
+          if [ -n "$FLUTTER_DIR" ] && [ -f "$FLUTTER_DIR/pubspec.yaml" ]; then
+            cd "$FLUTTER_DIR"
+            flutter build ios --release --no-codesign
+            mkdir -p "$GITHUB_WORKSPACE/build/ipa" Payload
+            cp -r build/ios/iphoneos/Runner.app Payload/
+            zip -qq -r "$GITHUB_WORKSPACE/build/ipa/FitApp.ipa" Payload
+          else
+            echo "BLAD: Nie znaleziono pubspec.yaml"
+            exit 1
+          fi
 
-          mkdir -p "$GITHUB_WORKSPACE/pages_output"
-          cp -r build/web/. "$GITHUB_WORKSPACE/pages_output/"
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v4
+      - name: Upload iOS IPA
+        uses: actions/upload-artifact@v4
         with:
-          path: ./pages_output
+          name: FitApp-iOS-IPA
+          path: build/ipa/*.ipa
 
-  # ============================================================
-  # JOB 3: PUBLIKACJA STRONY NA GITHUB PAGES
-  # ============================================================
-  deploy-pages:
-    needs: build-web
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+  # Web build przez GitHub Actions nie jest mozliwy z Flet 0.25.2
+  # Uzyj Render.com do hostowania wersji web:
+  # Start Command: python -m flet run main.py --web --port $PORT --host 0.0.0.0
+  # Environment: PYTHON_VERSION=3.11.0
