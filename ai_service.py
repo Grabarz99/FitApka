@@ -9,12 +9,12 @@ class AIService:
 
     def _call_gemini(self, prompt, image_path=None, json_mode=False):
         api_key = self.db.get_setting("api_key", "").strip()
-        model = self.db.get_setting("model_name", "gemini-3.8-flash").strip()
+        model = self.db.get_setting("model_name", "gemini-2.5-flash").strip()
 
         if not api_key:
-            raise ValueError("Brak klucza API! Wklej swoj klucz w zakladce Ustawienia.")
+            raise ValueError("Brak klucza API! Wklej swoj klucz w zakladce Profil/Opcje.")
         if not model:
-            model = "gemini-3.8-flash"
+            model = "gemini-2.5-flash"
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
         parts = [{"text": prompt}]
@@ -42,7 +42,7 @@ class AIService:
             raise RuntimeError("Brak polaczenia z internetem.")
 
         if resp.status_code == 404:
-            raise RuntimeError(f"Model '{model}' niedostepny. Zmien model w Ustawieniach.")
+            raise RuntimeError(f"Model '{model}' niedostepny. Zmien model w Ustawieniach (np. gemini-2.5-flash).")
         if resp.status_code in (401, 403):
             raise RuntimeError("Nieprawidlowy klucz API. Sprawdz klucz w Ustawieniach.")
         if resp.status_code == 429:
@@ -166,11 +166,11 @@ class AIService:
             "Jestes dietetykiem. Przeanalizuj dzisiejsza diete uzytkownika.\n"
             f"Cele: {target_kcal}kcal, B:{target_p}g, T:{target_f}g, W:{target_c}g\n"
             f"Zjedzone dzisiaj:\n{meals_text}\n\n"
-            "Oceń diete w punktach:\n"
+            "Ocen diete w punktach:\n"
             "1. Czy cele sa osiagniete?\n"
             "2. Co jest dobrze?\n"
             "3. Co poprawic?\n"
-            "4. Propozycja na resztę dnia\n"
+            "4. Propozycja na reszte dnia\n"
             "Odpowiedz krotko po polsku, max 200 slow."
         )
         return self._call_gemini(prompt)
@@ -182,7 +182,7 @@ class AIService:
         target = self.db.get_setting("target_weight", "?")
         prompt = (
             "Jestes motywujacym trenerem personalnym. "
-            f"Uzytkownik ma streak {streak} dni, waze {weight}kg, cel {target}kg. "
+            f"Uzytkownik ma streak {streak} dni, wazy {weight}kg, cel {target}kg. "
             "Napisz krotka (2-3 zdania) motywujaca wiadomosc na dzis po polsku. "
             "Dodaj 1 konkretna porade treningowa lub dietetyczna na dzis."
         )
