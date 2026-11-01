@@ -8,16 +8,9 @@ class FitDatabase:
     def __init__(self, db_path="fit_app.db"):
         self.db_path = db_path
         self.init_db()
-        self._migrate_model()
 
     def get_conn(self):
         return sqlite3.connect(self.db_path, check_same_thread=False)
-
-    def _migrate_model(self):
-        old_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-exp", "gemini-1.5-flash"]
-        current = self.get_setting("model_name", "")
-        if current in old_models or current == "":
-            self.set_setting("model_name", "gemini-3.8-flash")
 
     def init_db(self):
         with self.get_conn() as conn:
@@ -27,11 +20,11 @@ class FitDatabase:
                 key TEXT PRIMARY KEY, value TEXT)''')
 
             defaults = {
-                "api_key": "", "model_name": "gemini-3.8-flash",
+                "api_key": "", "model_name": "gemini-2.5-flash",
                 "target_kcal": "2200", "target_protein": "160",
                 "target_fat": "70", "target_carbs": "230",
                 "current_weight": "90.0", "target_weight": "70.0",
-                "height": "175", "profile_name": "", "profile_age": "25",
+                "height": "163", "profile_name": "", "profile_age": "24",
                 "profile_gender": "Mezczyzna", "profile_activity": "Umiarkowanie aktywny",
                 "target_water": "8",
             }
@@ -66,7 +59,6 @@ class FitDatabase:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT, weight REAL)''')
 
-            # Nowe tabele
             c.execute('''CREATE TABLE IF NOT EXISTS water_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT, glasses INTEGER DEFAULT 0)''')
@@ -105,6 +97,14 @@ class FitDatabase:
                 (date_str, meal_type, name, int(kcal), float(protein), float(fat), float(carbs)))
             conn.commit()
 
+    def update_meal(self, meal_id, meal_type, name, kcal, protein, fat, carbs):
+        with self.get_conn() as conn:
+            conn.execute('''UPDATE meals
+                SET meal_type = ?, name = ?, kcal = ?, protein = ?, fat = ?, carbs = ?
+                WHERE id = ?''',
+                (meal_type, name, int(kcal), float(protein), float(fat), float(carbs), meal_id))
+            conn.commit()
+
     def get_meals_by_date(self, date_str):
         with self.get_conn() as conn:
             return conn.execute('''SELECT id, meal_type, name, kcal, protein, fat, carbs
@@ -127,6 +127,15 @@ class FitDatabase:
                 VALUES (?, ?, ?, ?, ?, ?, ?)''',
                 (title, int(kcal), float(protein), float(fat), float(carbs),
                  json.dumps(ingredients_list, ensure_ascii=False), instructions))
+            conn.commit()
+
+    def update_recipe(self, recipe_id, title, kcal, protein, fat, carbs, ingredients_list, instructions):
+        with self.get_conn() as conn:
+            conn.execute('''UPDATE recipes
+                SET title = ?, kcal = ?, protein = ?, fat = ?, carbs = ?, ingredients_json = ?, instructions = ?
+                WHERE id = ?''',
+                (title, int(kcal), float(protein), float(fat), float(carbs),
+                 json.dumps(ingredients_list, ensure_ascii=False), instructions, recipe_id))
             conn.commit()
 
     def get_recipes(self):
@@ -173,6 +182,21 @@ class FitDatabase:
                  float(weight_kg or 0), int(duration_min or 0), int(kcal_burned or 0), notes))
             conn.commit()
 
+    def update_workout(self, workout_id, activity_type, name, sets=0, reps=0,
+                       weight_kg=0.0, duration_min=0, kcal_burned=0):
+        with self.get_conn() as conn:
+            conn.execute('''UPDATE workouts
+                SET activity_type = ?, name = ?, sets = ?, reps = ?, weight_kg = ?, duration_min = ?, kcal_burned = ?
+                WHERE id = ?''',
+                (activity_type, name, int(sets or 0), int(reps or 0),
+                 float(weight_kg or 0), int(duration_min or 0), int(kcal_burned or 0), workout_id))
+            conn.commit()
+
+    def delete_workout(self, workout_id):
+        with self.get_conn() as conn:
+            conn.execute("DELETE FROM workouts WHERE id = ?", (workout_id,))
+            conn.commit()
+
     def get_workouts_by_date(self, date_str):
         with self.get_conn() as conn:
             return conn.execute('''SELECT id, activity_type, name, sets, reps, weight_kg,
@@ -202,12 +226,25 @@ class FitDatabase:
         with self.get_conn() as conn:
             return conn.execute("SELECT id, created_at, plan_name, plan_text FROM ai_workout_plans ORDER BY id DESC").fetchall()
 
+    def delete_ai_plan(self, plan_id):
+        with self.get_conn() as conn:
+            conn.execute("DELETE FROM ai_workout_plans WHERE id = ?", (plan_id,))
+            conn.commit()
+
     # --- SZABLONY TRENINGOW ---
     def save_workout_template(self, name, exercises):
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
         with self.get_conn() as conn:
             conn.execute("INSERT INTO workout_templates (name, exercises_json, created_at) VALUES (?, ?, ?)",
                 (name, json.dumps(exercises, ensure_ascii=False), now))
+            conn.commit()
+
+    def update_workout_template(self, template_id, name, exercises):
+        with self.get_conn() as conn:
+            conn.execute('''UPDATE workout_templates
+                SET name = ?, exercises_json = ?
+                WHERE id = ?''',
+                (name, json.dumps(exercises, ensure_ascii=False), template_id))
             conn.commit()
 
     def get_workout_templates(self):
@@ -230,6 +267,15 @@ class FitDatabase:
     def get_weight_logs(self):
         with self.get_conn() as conn:
             return conn.execute("SELECT date, weight FROM weight_logs ORDER BY date ASC").fetchall()
+
+    def get_weight_logs_with_id(self):
+        with self.get_conn() as conn:
+            return conn.execute("SELECT id, date, weight FROM weight_logs ORDER BY date ASC, id ASC").fetchall()
+
+    def delete_weight_log(self, log_id):
+        with self.get_conn() as conn:
+            conn.execute("DELETE FROM weight_logs WHERE id = ?", (log_id,))
+            conn.commit()
 
     # --- ZDJECIA SYLWETKI ---
     def add_progress_photo(self, date_str, photo_path, note=""):
@@ -255,8 +301,8 @@ class FitDatabase:
 
     def set_water_today(self, date_str, glasses):
         with self.get_conn() as conn:
-            conn.execute("INSERT OR REPLACE INTO water_logs (date, glasses) VALUES (?, ?)",
-                (date_str, int(glasses)))
+            conn.execute("DELETE FROM water_logs WHERE date = ?", (date_str,))
+            conn.execute("INSERT INTO water_logs (date, glasses) VALUES (?, ?)", (date_str, int(glasses)))
             conn.commit()
 
     def add_water_glass(self, date_str):
@@ -302,4 +348,35 @@ class FitDatabase:
     def clear_chat_history(self):
         with self.get_conn() as conn:
             conn.execute("DELETE FROM ai_chat_history")
+            conn.commit()
+
+    # --- BACKUP / PRZENOSZENIE DANYCH MIEDZY TELEFONAMI (JSON) ---
+    def export_backup_json(self):
+        with self.get_conn() as conn:
+            data = {
+                "settings": {r[0]: r[1] for r in conn.execute("SELECT key, value FROM settings").fetchall() if r[0] != "api_key"},
+                "meals": conn.execute("SELECT date, meal_type, name, kcal, protein, fat, carbs FROM meals").fetchall(),
+                "recipes": conn.execute("SELECT title, kcal, protein, fat, carbs, ingredients_json, instructions FROM recipes").fetchall(),
+                "workouts": conn.execute("SELECT date, activity_type, name, sets, reps, weight_kg, duration_min, kcal_burned, notes FROM workouts").fetchall(),
+                "templates": conn.execute("SELECT name, exercises_json, created_at FROM workout_templates").fetchall(),
+                "weight_logs": conn.execute("SELECT date, weight FROM weight_logs").fetchall(),
+            }
+            return json.dumps(data, ensure_ascii=False)
+
+    def import_backup_json(self, json_str):
+        data = json.loads(json_str)
+        with self.get_conn() as conn:
+            for k, v in data.get("settings", {}).items():
+                if k != "api_key":
+                    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, str(v)))
+            for m in data.get("meals", []):
+                conn.execute("INSERT INTO meals (date, meal_type, name, kcal, protein, fat, carbs) VALUES (?, ?, ?, ?, ?, ?, ?)", m)
+            for r in data.get("recipes", []):
+                conn.execute("INSERT INTO recipes (title, kcal, protein, fat, carbs, ingredients_json, instructions) VALUES (?, ?, ?, ?, ?, ?, ?)", r)
+            for w in data.get("workouts", []):
+                conn.execute("INSERT INTO workouts (date, activity_type, name, sets, reps, weight_kg, duration_min, kcal_burned, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", w)
+            for t in data.get("templates", []):
+                conn.execute("INSERT INTO workout_templates (name, exercises_json, created_at) VALUES (?, ?, ?)", t)
+            for wl in data.get("weight_logs", []):
+                conn.execute("INSERT INTO weight_logs (date, weight) VALUES (?, ?)", wl)
             conn.commit()
