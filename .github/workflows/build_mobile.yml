@@ -30,7 +30,7 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.27.4'
+          flutter-version: '3.24.5'
           channel: 'stable'
 
       - name: Accept Android Licenses & Build APK
@@ -60,7 +60,7 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.27.4'
+          flutter-version: '3.24.5'
           channel: 'stable'
 
       - name: Enable Flutter Web & Precache
@@ -68,16 +68,27 @@ jobs:
           flutter config --enable-web
           flutter precache --web
 
-      - name: Install Flet & Build Web
+      - name: Install Flet & Build Web (Pin package:web to 1.0.0)
         run: |
           printf "flet==0.25.2\n" > requirements.txt
           pip install "flet==0.25.2"
-          flet build web --base-url /FitApka/ --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka" --verbose
+          flet build web --base-url /FitApka/ --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka" || true
 
-      - name: Prepare GitHub Pages output
-        run: |
-          mkdir -p ./pages_output
-          cp -r build/web/. ./pages_output/
+          python3 -c '
+          import pathlib, re
+          p = pathlib.Path("build/flutter/pubspec.yaml")
+          txt = p.read_text()
+          txt = re.sub(r"(^\s*web:\s*).*$", r"\g<1>1.0.0", txt, flags=re.M)
+          p.write_text(txt)
+          print("Zablokowano web: 1.0.0 w pubspec.yaml")
+          '
+
+          cd build/flutter
+          flutter pub get
+          flutter build web --release --base-href "/FitApka/"
+
+          mkdir -p "$GITHUB_WORKSPACE/pages_output"
+          cp -r build/web/. "$GITHUB_WORKSPACE/pages_output/"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
