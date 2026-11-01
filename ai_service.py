@@ -1,18 +1,40 @@
-import requests
 import json
 import base64
+import urllib.request
+import urllib.error
 
 
 class AIService:
     def __init__(self, db):
         self.db = db
 
+    def _http_post_json(self, url, payload, timeout=60):
+        data_bytes = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=data_bytes,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.getcode(), resp.read().decode("utf-8")
+        except urllib.error.HTTPError as e:
+            return e.code, e.read().decode("utf-8", errors="ignore")
+        except Exception as e:
+            raise RuntimeError(f"Blad polaczenia z siecia: {e}")
+
+    def _http_get_json(self, url, timeout=15):
+        req = urllib.request.Request(url, headers={"User-Agent": "FitAIApp/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
     def _call_gemini(self, prompt, image_path=None, json_mode=False):
         api_key = self.db.get_setting("api_key", "").strip()
         model = self.db.get_setting("model_name", "gemini-2.5-flash").strip()
 
         if not api_key:
-            raise ValueError("Brak klucza API! Wklej swoj klucz w zakladce Profil/Opcje.")
+            raise ValueError("Brak klucza API! Wklej swoj klucz w zakladce Opcje.")
         if not model:
             model = "gemini-2.5-flash"
 
@@ -34,23 +56,18 @@ class AIService:
         if json_mode:
             payload["generationConfig"] = {"responseMimeType": "application/json"}
 
-        try:
-            resp = requests.post(url, json=payload, timeout=60)
-        except requests.exceptions.Timeout:
-            raise RuntimeError("Przekroczono czas oczekiwania (60s). Sprobuj ponownie.")
-        except requests.exceptions.ConnectionError:
-            raise RuntimeError("Brak polaczenia z internetem.")
+        status_code, body_text = self._http_post_json(url, payload, timeout=60)
 
-        if resp.status_code == 404:
-            raise RuntimeError(f"Model '{model}' niedostepny. Zmien model w Ustawieniach (np. gemini-2.5-flash).")
-        if resp.status_code in (401, 403):
-            raise RuntimeError("Nieprawidlowy klucz API. Sprawdz klucz w Ustawieniach.")
-        if resp.status_code == 429:
-            raise RuntimeError("Przekroczono limit zapytan. Poczekaj i sprobuj ponownie.")
-        if resp.status_code != 200:
-            raise RuntimeError(f"Blad Gemini API ({resp.status_code}): {resp.text[:200]}")
+        if status_code == 404:
+            raise RuntimeError(f"Model '{model}' niedostepny. Zmien model w Opcjach (np. gemini-2.5-flash).")
+        if status_code in (401, 403):
+            raise RuntimeError("Nieprawidlowy klucz API. Sprawdz klucz w Opcjach.")
+        if status_code == 429:
+            raise RuntimeError("Przekroczono limit zapytan. Poczekaj chwile i sprobuj ponownie.")
+        if status_code != 200:
+            raise RuntimeError(f"Blad Gemini API ({status_code}): {body_text[:200]}")
 
-        data = resp.json()
+        data = json.loads(body_text)
         try:
             return data["candidates"][0]["content"]["parts"][0]["text"]
         except (KeyError, IndexError):
@@ -78,8 +95,7 @@ class AIService:
     def get_product_by_barcode(self, barcode, weight_grams=100):
         url = f"https://world.openfoodfacts.org/api/v0/product/{barcode.strip()}.json"
         try:
-            resp = requests.get(url, timeout=15)
-            data = resp.json()
+            data = self._http_get_json(url, timeout=15)
         except Exception as e:
             raise ValueError(f"Blad polaczenia: {e}")
         if data.get("status") != 1:
