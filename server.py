@@ -1,5 +1,6 @@
 import os
 import sys
+import importlib.util
 
 # Ustaw folder na dane aplikacji
 storage_dir = "/tmp/fitapp_data"
@@ -10,15 +11,13 @@ port = int(os.environ.get("PORT", 10000))
 
 import flet as ft
 
-# Importuj tylko funkcję main, nie uruchamiaj ft.app z main.py
-import importlib.util
-spec = importlib.util.spec_from_file_location("main_module", "main.py")
-mod = importlib.util.load_module_from_spec(spec)
-
-# Podmień ft.app żeby nie uruchamiał się przy imporcie
+# Blokuj ft.app żeby nie uruchamiał się przy imporcie main.py
 original_app = ft.app
-ft.app = lambda **kwargs: None  # blokuj auto-start
+ft.app = lambda *args, **kwargs: None
 
+# Importuj main.py bez uruchamiania ft.app
+spec = importlib.util.spec_from_file_location("main_module", "main.py")
+mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
 # Przywróć oryginalne ft.app
