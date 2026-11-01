@@ -1,11 +1,10 @@
-name: Build Fit App (Android & iOS & Web)
+name: Build Fit App (Android & Web)
 
 on:
   workflow_dispatch:
   push:
     branches: [ main, master ]
 
-# Uprawnienia do publikacji GitHub Pages
 permissions:
   contents: read
   pages: write
@@ -37,8 +36,8 @@ jobs:
       - name: Accept Android Licenses & Build APK
         run: |
           yes | flutter doctor --android-licenses || true
-          printf "flet==0.25.2\nrequests\n" > requirements.txt
-          pip install "flet==0.25.2" requests
+          printf "flet==0.25.2\n" > requirements.txt
+          pip install "flet==0.25.2"
           flet build apk --verbose --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka"
 
       - name: Upload Android APK
@@ -48,54 +47,7 @@ jobs:
           path: build/apk/*.apk
 
   # ============================================================
-  # JOB 2: iOS IPA
-  # ============================================================
-  build-ios:
-    runs-on: macos-14
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.24.5'
-          channel: 'stable'
-
-      - name: Install Flet & Build Unsigned iOS IPA
-        run: |
-          printf "flet==0.25.2\nrequests\n" > requirements.txt
-          pip install "flet==0.25.2" requests
-          flet build ipa --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka" || true
-
-          FLUTTER_DIR=$(find /tmp -name "pubspec.yaml" 2>/dev/null | head -n 1 | xargs dirname || true)
-          if [ -z "$FLUTTER_DIR" ]; then
-            FLUTTER_DIR=$(find . -name "pubspec.yaml" 2>/dev/null | head -n 1 | xargs dirname || true)
-          fi
-
-          echo "Znaleziony folder projektu Flutter: $FLUTTER_DIR"
-
-          if [ -n "$FLUTTER_DIR" ] && [ -f "$FLUTTER_DIR/pubspec.yaml" ]; then
-            cd "$FLUTTER_DIR"
-            flutter build ios --release --no-codesign
-            mkdir -p "$GITHUB_WORKSPACE/build/ipa" Payload
-            cp -r build/ios/iphoneos/Runner.app Payload/
-            zip -qq -r "$GITHUB_WORKSPACE/build/ipa/FitApp.ipa" Payload
-          else
-            echo "BLAD: Nie znaleziono pubspec.yaml"
-            exit 1
-          fi
-
-      - name: Upload iOS IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: FitApp-iOS-IPA
-          path: build/ipa/*.ipa
-
-  # ============================================================
-  # JOB 3: WEB (GitHub Pages)
+  # JOB 2: WEB (Dla iPhone 16 przez GitHub Pages)
   # ============================================================
   build-web:
     runs-on: ubuntu-latest
@@ -108,39 +60,24 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          channel: 'master'
+          flutter-version: '3.24.5'
+          channel: 'stable'
 
-      - name: Install system dependencies
+      - name: Enable Flutter Web & Precache
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y libgtk-3-dev libglib2.0-dev
-
-      - name: Enable Flutter Web
-        run: flutter config --enable-web
+          flutter config --enable-web
+          flutter precache --web
 
       - name: Install Flet & Build Web
         run: |
-          printf "flet==0.25.2\nrequests\n" > requirements.txt
-          pip install "flet==0.25.2" requests
-          flet build web --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka" --verbose
+          printf "flet==0.25.2\n" > requirements.txt
+          pip install "flet==0.25.2"
+          flet build web --base-url /FitApka/ --product "Fit AI" --project "fit-ai-app" --org "pl.twojaapka" --verbose
 
       - name: Prepare GitHub Pages output
         run: |
           mkdir -p ./pages_output
-          if [ -d "build/web" ]; then
-            cp -r build/web/. ./pages_output/
-          else
-            echo "Szukam folderu web..."
-            WEB_DIR=$(find . -name "index.html" -not -path "*/node_modules/*" | head -n 1 | xargs dirname || true)
-            if [ -n "$WEB_DIR" ]; then
-              cp -r "$WEB_DIR/." ./pages_output/
-            else
-              echo "BLAD: Nie znaleziono folderu web"
-              exit 1
-            fi
-          fi
-          echo "Zawartosc pages_output:"
-          ls -la ./pages_output/
+          cp -r build/web/. ./pages_output/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -148,7 +85,7 @@ jobs:
           path: ./pages_output
 
   # ============================================================
-  # JOB 4: DEPLOY na GitHub Pages
+  # JOB 3: PUBLIKACJA STRONY NA GITHUB PAGES
   # ============================================================
   deploy-pages:
     needs: build-web
