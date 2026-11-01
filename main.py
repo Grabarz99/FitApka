@@ -40,7 +40,7 @@ def main(page: ft.Page):
 
     def make_header(title):
         return ft.Container(
-            padding=ft.padding.only(left=16, right=16, top=16, bottom=8),
+            padding=ft.padding.only(left=16, right=16, top=12, bottom=8),
             content=ft.Text(title, size=22, weight=ft.FontWeight.BOLD, color="white"))
 
     def accent_btn(text, icon, on_click, color="#00C853"):
@@ -49,6 +49,279 @@ def main(page: ft.Page):
             on_click=on_click)
 
     loading_bar = ft.ProgressBar(visible=False, color="#00E676", bgcolor="#1A1A24", height=3)
+
+    # =========================================================================
+    # OKNA MODALNE EDYCJI (POSILKI, PRZEPISY, SZABLONY, DZISIEJSZE AKTYWNOSCI)
+    # =========================================================================
+    def open_edit_meal_dialog(meal_row):
+        m_id, m_type, m_name, m_kcal, m_p, m_f, m_c = meal_row
+
+        type_dd = ft.Dropdown(
+            label="Posilek", value=m_type,
+            options=[ft.dropdown.Option("Sniadanie"), ft.dropdown.Option("II Sniadanie"),
+                     ft.dropdown.Option("Obiad"), ft.dropdown.Option("Kolacja")],
+            bgcolor="#1E1E2A", border_color="#3A3A4A")
+        name_tf = ft.TextField(label="Nazwa posilku", value=m_name, multiline=True,
+            bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+        kcal_tf = ft.TextField(label="Kcal", value=str(m_kcal), width=110,
+            keyboard_type=ft.KeyboardType.NUMBER, bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+        p_tf = ft.TextField(label="Bialko (g)", value=str(m_p), width=110,
+            keyboard_type=ft.KeyboardType.NUMBER, bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+        f_tf = ft.TextField(label="Tluszcz (g)", value=str(m_f), width=110,
+            keyboard_type=ft.KeyboardType.NUMBER, bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+        c_tf = ft.TextField(label="Wegle (g)", value=str(m_c), width=110,
+            keyboard_type=ft.KeyboardType.NUMBER, bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+
+        def scale_portion(factor):
+            kcal_tf.value = str(int(round(m_kcal * factor)))
+            p_tf.value = str(round(m_p * factor, 1))
+            f_tf.value = str(round(m_f * factor, 1))
+            c_tf.value = str(round(m_c * factor, 1))
+            page.update()
+
+        def save_meal_edit(e):
+            try:
+                db.update_meal(
+                    m_id, type_dd.value, name_tf.value.strip(),
+                    int(float(kcal_tf.value.replace(",", ".") or 0)),
+                    float(p_tf.value.replace(",", ".") or 0),
+                    float(f_tf.value.replace(",", ".") or 0),
+                    float(c_tf.value.replace(",", ".") or 0)
+                )
+                dlg.open = False
+                refresh_diet()
+                show_msg("Zaktualizowano posilek!")
+            except Exception as ex:
+                show_msg(f"Blad zapisu: {ex}", True)
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Edytuj posilek"),
+            bgcolor="#16161E",
+            content=ft.Container(
+                width=310,
+                content=ft.Column([
+                    type_dd, name_tf,
+                    ft.Text("Szybki przelicznik porcji:", size=12, color="#9E9E9E"),
+                    ft.Row([
+                        ft.ElevatedButton("0.5x", bgcolor="#1E1E2A", color="#00E676",
+                            on_click=lambda _: scale_portion(0.5)),
+                        ft.ElevatedButton("1.5x", bgcolor="#1E1E2A", color="#00E676",
+                            on_click=lambda _: scale_portion(1.5)),
+                        ft.ElevatedButton("2x", bgcolor="#1E1E2A", color="#00E676",
+                            on_click=lambda _: scale_portion(2.0)),
+                    ], spacing=6),
+                    ft.Row([kcal_tf, p_tf], spacing=8),
+                    ft.Row([f_tf, c_tf], spacing=8),
+                ], tight=True, spacing=8, scroll=ft.ScrollMode.ADAPTIVE)
+            ),
+            actions=[
+                ft.TextButton("Anuluj", on_click=lambda _: setattr(dlg, "open", False) or page.update()),
+                ft.ElevatedButton("Zapisz", bgcolor="#00C853", color="white", on_click=save_meal_edit),
+            ]
+        )
+        page.overlay.append(dlg)
+        dlg.open = True
+        page.update()
+
+    def open_edit_recipe_dialog(rec):
+        title_tf = ft.TextField(label="Nazwa przepisu", value=rec["title"],
+            bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+        kcal_tf = ft.TextField(label="Kcal", value=str(rec["kcal"]), width=110,
+            keyboard_type=ft.KeyboardType.NUMBER, bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+        p_tf = ft.TextField(label="Bialko (g)", value=str(rec["protein"]), width=110,
+            keyboard_type=ft.KeyboardType.NUMBER, bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+        f_tf = ft.TextField(label="Tluszcz (g)", value=str(rec["fat"]), width=110,
+            keyboard_type=ft.KeyboardType.NUMBER, bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+        c_tf = ft.TextField(label="Wegle (g)", value=str(rec["carbs"]), width=110,
+            keyboard_type=ft.KeyboardType.NUMBER, bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+        ings_tf = ft.TextField(
+            label="Skladniki (oddzielone przecinkiem)",
+            value=", ".join(rec["ingredients"]),
+            multiline=True, min_lines=2, max_lines=4,
+            bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+        instr_tf = ft.TextField(
+            label="Instrukcja przygotowania",
+            value=rec["instructions"],
+            multiline=True, min_lines=3, max_lines=6,
+            bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+
+        def save_rec_edit(e):
+            try:
+                ings_list = [x.strip() for x in ings_tf.value.split(",") if x.strip()]
+                db.update_recipe(
+                    rec["id"], title_tf.value.strip(),
+                    int(float(kcal_tf.value.replace(",", ".") or 0)),
+                    float(p_tf.value.replace(",", ".") or 0),
+                    float(f_tf.value.replace(",", ".") or 0),
+                    float(c_tf.value.replace(",", ".") or 0),
+                    ings_list, instr_tf.value.strip()
+                )
+                dlg.open = False
+                refresh_recipes_and_shopping()
+                show_msg("Zaktualizowano przepis!")
+            except Exception as ex:
+                show_msg(f"Blad zapisu: {ex}", True)
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Edytuj przepis"),
+            bgcolor="#16161E",
+            content=ft.Container(
+                width=310,
+                content=ft.Column([
+                    title_tf,
+                    ft.Row([kcal_tf, p_tf], spacing=8),
+                    ft.Row([f_tf, c_tf], spacing=8),
+                    ings_tf, instr_tf
+                ], tight=True, spacing=8, scroll=ft.ScrollMode.ADAPTIVE)
+            ),
+            actions=[
+                ft.TextButton("Anuluj", on_click=lambda _: setattr(dlg, "open", False) or page.update()),
+                ft.ElevatedButton("Zapisz", bgcolor="#00C853", color="white", on_click=save_rec_edit),
+            ]
+        )
+        page.overlay.append(dlg)
+        dlg.open = True
+        page.update()
+
+    def open_edit_template_dialog(tmpl):
+        t_name_tf = ft.TextField(label="Nazwa szablonu", value=tmpl["name"],
+            bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+        rows_col = ft.Column(spacing=8, scroll=ft.ScrollMode.ADAPTIVE)
+        row_controls = []
+
+        def add_exercise_row(ex_name_val="", sets_val="4", reps_val="8", weight_val="80"):
+            n_tf = ft.TextField(label="Cwiczenie", value=str(ex_name_val), expand=True,
+                bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=8, text_size=12)
+            s_tf = ft.TextField(label="S", value=str(sets_val), width=52,
+                keyboard_type=ft.KeyboardType.NUMBER, bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=8, text_size=12)
+            r_tf = ft.TextField(label="P", value=str(reps_val), width=52,
+                keyboard_type=ft.KeyboardType.NUMBER, bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=8, text_size=12)
+            w_tf = ft.TextField(label="kg", value=str(weight_val), width=68,
+                keyboard_type=ft.KeyboardType.NUMBER, bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=8, text_size=12)
+
+            row_obj = {"n": n_tf, "s": s_tf, "r": r_tf, "w": w_tf, "container": None}
+
+            def remove_this_row(e):
+                if row_obj in row_controls:
+                    row_controls.remove(row_obj)
+                    rows_col.controls.remove(row_obj["container"])
+                    page.update()
+
+            del_btn = ft.IconButton(icon="remove_circle_outline", icon_color="#EF5350", icon_size=18, on_click=remove_this_row)
+            cont = ft.Container(
+                padding=6, bgcolor="#12121A", border_radius=10,
+                content=ft.Column([
+                    ft.Row([n_tf, del_btn], spacing=4),
+                    ft.Row([s_tf, r_tf, w_tf], spacing=6),
+                ], spacing=4)
+            )
+            row_obj["container"] = cont
+            row_controls.append(row_obj)
+            rows_col.controls.append(cont)
+            page.update()
+
+        for ex in tmpl.get("exercises", []):
+            add_exercise_row(ex.get("name", ""), ex.get("sets", 4), ex.get("reps", 8), ex.get("weight", 0))
+
+        def save_tmpl_edit(e):
+            if not t_name_tf.value.strip():
+                show_msg("Podaj nazwe szablonu!", True)
+                return
+            new_ex_list = []
+            for rc in row_controls:
+                ename = rc["n"].value.strip()
+                if ename:
+                    try:
+                        s_v = int(float(rc["s"].value.replace(",", ".") or 0))
+                        r_v = int(float(rc["r"].value.replace(",", ".") or 0))
+                        w_v = float(rc["w"].value.replace(",", ".") or 0.0)
+                    except ValueError:
+                        s_v, r_v, w_v = 4, 8, 0.0
+                    new_ex_list.append({"name": ename, "sets": s_v, "reps": r_v, "weight": w_v})
+            db.update_workout_template(tmpl["id"], t_name_tf.value.strip(), new_ex_list)
+            dlg.open = False
+            refresh_templates()
+            show_msg("Zaktualizowano szablon treningu!")
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Edytuj szablon treningu"),
+            bgcolor="#16161E",
+            content=ft.Container(
+                width=320, height=400,
+                content=ft.Column([
+                    t_name_tf,
+                    ft.Row([
+                        ft.Text("Cwiczenia w szablonie:", size=12, color="#9E9E9E", expand=True),
+                        ft.TextButton("+ Dodaj cwiczenie", on_click=lambda _: add_exercise_row()),
+                    ]),
+                    rows_col,
+                ], scroll=ft.ScrollMode.ADAPTIVE, spacing=8)
+            ),
+            actions=[
+                ft.TextButton("Anuluj", on_click=lambda _: setattr(dlg, "open", False) or page.update()),
+                ft.ElevatedButton("Zapisz", bgcolor="#00C853", color="white", on_click=save_tmpl_edit),
+            ]
+        )
+        page.overlay.append(dlg)
+        dlg.open = True
+        page.update()
+
+    def open_edit_workout_dialog(w_row):
+        w_id, w_type, w_name, w_sets, w_reps, w_kg, w_dur, w_kcal, _ = w_row
+
+        type_dd = ft.Dropdown(
+            label="Rodzaj aktywnosci", value=w_type,
+            options=[ft.dropdown.Option("Silownia"),
+                     ft.dropdown.Option("Inna aktywnosc (Hokej / Kardio / Inne)")],
+            bgcolor="#1E1E2A", border_color="#3A3A4A")
+        name_tf = ft.TextField(label="Cwiczenie / Aktywnosc", value=w_name,
+            bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+        sets_tf = ft.TextField(label="Serie", value=str(w_sets), width=90,
+            keyboard_type=ft.KeyboardType.NUMBER, bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+        reps_tf = ft.TextField(label="Powt.", value=str(w_reps), width=90,
+            keyboard_type=ft.KeyboardType.NUMBER, bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+        kg_tf = ft.TextField(label="Ciezar (kg)", value=str(w_kg), width=110,
+            keyboard_type=ft.KeyboardType.NUMBER, bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+        dur_tf = ft.TextField(label="Czas (min)", value=str(w_dur), width=110,
+            keyboard_type=ft.KeyboardType.NUMBER, bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+        kcal_tf = ft.TextField(label="Spalone kcal", value=str(w_kcal), width=120,
+            keyboard_type=ft.KeyboardType.NUMBER, bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=10)
+
+        def save_w_edit(e):
+            try:
+                db.update_workout(
+                    w_id, type_dd.value, name_tf.value.strip(),
+                    int(float(sets_tf.value.replace(",", ".") or 0)),
+                    int(float(reps_tf.value.replace(",", ".") or 0)),
+                    float(kg_tf.value.replace(",", ".") or 0.0),
+                    int(float(dur_tf.value.replace(",", ".") or 0)),
+                    int(float(kcal_tf.value.replace(",", ".") or 0))
+                )
+                dlg.open = False
+                refresh_workouts()
+                show_msg("Zaktualizowano wpis treningowy!")
+            except Exception as ex:
+                show_msg(f"Blad zapisu: {ex}", True)
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Edytuj trening"),
+            bgcolor="#16161E",
+            content=ft.Container(
+                width=310,
+                content=ft.Column([
+                    type_dd, name_tf,
+                    ft.Row([sets_tf, reps_tf, kg_tf], wrap=True, spacing=6),
+                    ft.Row([dur_tf, kcal_tf], wrap=True, spacing=6),
+                ], tight=True, spacing=8)
+            ),
+            actions=[
+                ft.TextButton("Anuluj", on_click=lambda _: setattr(dlg, "open", False) or page.update()),
+                ft.ElevatedButton("Zapisz", bgcolor="#00C853", color="white", on_click=save_w_edit),
+            ]
+        )
+        page.overlay.append(dlg)
+        dlg.open = True
+        page.update()
 
     # =========================================================================
     # WIZUALNY KALENDARZ
@@ -92,7 +365,7 @@ def main(page: ft.Page):
                 bg = "#1A2A1A"
                 txt_color = "#00E676"
             elif kcal > 0:
-                ratio = min(kcal / target_kcal, 1.0)
+                ratio = kcal / max(target_kcal, 1)
                 if ratio > 1.05:
                     bg = "#2A1A1A"
                     txt_color = "#EF5350"
@@ -108,6 +381,7 @@ def main(page: ft.Page):
                     current_date_value[0] = ds
                     build_calendar()
                     refresh_diet()
+                    refresh_workouts()
                     page.update()
                 return click
 
@@ -167,7 +441,7 @@ def main(page: ft.Page):
     ]))
 
     # =========================================================================
-    # ZAKŁADKA 1: DIETA
+    # ZAKLADKA 1: DIETA
     # =========================================================================
     diet_summary_text = ft.Text(size=13, color="#BDBDBD")
     kcal_main_text = ft.Text("0 / 2200 kcal", size=26, weight=ft.FontWeight.BOLD, color="white")
@@ -179,30 +453,27 @@ def main(page: ft.Page):
     macro_f_txt = ft.Text("Tluszcz: 0/70g", size=12, color="#FFA726")
     macro_c_txt = ft.Text("Wegle: 0/230g", size=12, color="#AB47BC")
 
-    # Streak
     streak_txt = ft.Text("", size=13, color="#FFA726", weight=ft.FontWeight.BOLD)
 
-    # Woda
     water_txt = ft.Text("0 / 8 szklanek", size=14, weight=ft.FontWeight.BOLD, color="#29B6F6")
     water_progress = ft.ProgressBar(value=0, color="#29B6F6", bgcolor="#2A2A35", height=6, border_radius=3)
 
     def refresh_water():
-        glasses = db.get_water_today(today_str)
+        glasses = db.get_water_today(current_date_value[0])
         target = int(db.get_setting("target_water", "8") or 8)
         water_txt.value = f"{glasses} / {target} szklanek"
         water_progress.value = min(glasses / max(target, 1), 1.0)
 
     def add_water(e):
-        db.add_water_glass(today_str)
+        db.add_water_glass(current_date_value[0])
         refresh_water()
         page.update()
 
     def remove_water(e):
-        db.remove_water_glass(today_str)
+        db.remove_water_glass(current_date_value[0])
         refresh_water()
         page.update()
 
-    # Wykres 7 dni
     chart_col = ft.Column(spacing=4)
 
     def build_week_chart():
@@ -290,10 +561,10 @@ def main(page: ft.Page):
         macro_p_bar.value = min(total_p / max(target_p, 1), 1.0)
         macro_f_bar.value = min(total_f / max(target_f, 1), 1.0)
         macro_c_bar.value = min(total_c / max(target_c, 1), 1.0)
-        diet_summary_text.value = f"Pozostalo: {target_kcal - total_kcal} kcal"
+        diet_summary_text.value = f"Data: {date_val}  |  Pozostalo: {target_kcal - total_kcal} kcal"
 
         streak = db.get_streak()
-        streak_txt.value = f"Streak: {streak} dni z rzędu!" if streak > 0 else ""
+        streak_txt.value = f"Streak: {streak} dni z rzedu!" if streak > 0 else ""
 
         refresh_water()
         build_week_chart()
@@ -326,8 +597,14 @@ def main(page: ft.Page):
                                     content=ft.Text(f"W:{m_c}g", size=11, color="#AB47BC")),
                             ], spacing=4, wrap=True)
                         ], expand=True, spacing=4),
-                        ft.IconButton(icon="delete_outline", icon_color="#EF5350", icon_size=20,
-                            on_click=lambda e, mid=m_id: (db.delete_meal(mid), refresh_diet()))
+                        ft.Row([
+                            ft.IconButton(icon="edit_outlined", icon_color="#42A5F5", icon_size=20,
+                                tooltip="Edytuj posilek",
+                                on_click=lambda e, m_obj=m: open_edit_meal_dialog(m_obj)),
+                            ft.IconButton(icon="delete_outline", icon_color="#EF5350", icon_size=20,
+                                tooltip="Usun posilek",
+                                on_click=lambda e, mid=m_id: (db.delete_meal(mid), refresh_diet())),
+                        ], spacing=0)
                     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
                 ))
             if not items_ui:
@@ -402,7 +679,7 @@ def main(page: ft.Page):
             page.update()
 
     analysis_dlg = ft.AlertDialog(
-        title=ft.Text("Analiza diety AI"),
+        title=ft.Text("Analiza AI"),
         content=ft.Container(
             width=300, height=400,
             content=ft.Column([ft.Text("", size=13, color="#BDBDBD")], scroll=ft.ScrollMode.AUTO)
@@ -419,7 +696,7 @@ def main(page: ft.Page):
         page.update()
 
     diet_view = ft.Column([
-        ft.Container(padding=ft.padding.only(left=16, right=16, top=16, bottom=8),
+        ft.Container(padding=ft.padding.only(left=16, right=16, top=12, bottom=8),
             content=ft.Row([
                 ft.Text("Dziennik Kalorii", size=22, weight=ft.FontWeight.BOLD, color="white", expand=True),
                 ft.IconButton(icon="refresh", icon_color="#00E676", on_click=lambda _: refresh_diet()),
@@ -475,7 +752,7 @@ def main(page: ft.Page):
     ], visible=True)
 
     # =========================================================================
-    # ZAKŁADKA 2: PRZEPISY + LISTA ZAKUPÓW
+    # ZAKLADKA 2: PRZEPISY + LISTA ZAKUPOW
     # =========================================================================
     recipe_query = ft.TextField(
         label="Czego szukasz? (np. obiad z kurczakiem do 600 kcal)",
@@ -509,7 +786,7 @@ def main(page: ft.Page):
     def confirm_eat_recipe():
         rec = current_recipe_ref[0]
         if rec:
-            db.add_meal(today_str, recipe_meal_dd.value,
+            db.add_meal(current_date_value[0], recipe_meal_dd.value,
                 rec["title"], rec["kcal"], rec["protein"], rec["fat"], rec["carbs"])
             eat_recipe_dlg.open = False
             page.update()
@@ -537,7 +814,16 @@ def main(page: ft.Page):
         for r in db.get_recipes():
             ing_text = ", ".join(r["ingredients"])
             recipes_list_col.controls.append(make_card(ft.Column([
-                ft.Text(r["title"], size=16, weight=ft.FontWeight.BOLD, color="#00E676"),
+                ft.Row([
+                    ft.Text(r["title"], size=16, weight=ft.FontWeight.BOLD, color="#00E676", expand=True),
+                    ft.IconButton(icon="edit_outlined", icon_color="#42A5F5", icon_size=20,
+                        tooltip="Edytuj przepis",
+                        on_click=lambda e, rec=r: open_edit_recipe_dialog(rec)),
+                    ft.IconButton(icon="delete_outline", icon_color="#EF5350", icon_size=20,
+                        tooltip="Usun przepis",
+                        on_click=lambda e, rid=r["id"]: (
+                            db.delete_recipe(rid), refresh_recipes_and_shopping())),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 ft.Row([
                     ft.Container(padding=ft.padding.symmetric(horizontal=6, vertical=2),
                         bgcolor="#1A2A1A", border_radius=6,
@@ -580,9 +866,6 @@ def main(page: ft.Page):
                         bgcolor="#1B5E20", color="white",
                         style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10), elevation=0),
                         on_click=lambda e, rec=r: save_recipe_to_keep(rec)),
-                    ft.IconButton(icon="delete_outline", icon_color="#EF5350",
-                        on_click=lambda e, rid=r["id"]: (
-                            db.delete_recipe(rid), refresh_recipes_and_shopping())),
                 ], wrap=True, spacing=8),
             ], spacing=6)))
 
@@ -659,7 +942,7 @@ def main(page: ft.Page):
     ], visible=False)
 
     # =========================================================================
-    # ZAKŁADKA 3: TRENINGI + TIMER + SZABLONY + 1RM
+    # ZAKLADKA 3: TRENINGI + TIMER + SZABLONY + 1RM
     # =========================================================================
     act_type_dd = ft.Dropdown(label="Rodzaj aktywnosci", value="Silownia",
         options=[ft.dropdown.Option("Silownia"),
@@ -683,7 +966,6 @@ def main(page: ft.Page):
         keyboard_type=ft.KeyboardType.NUMBER,
         bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=12)
 
-    # Timer
     timer_seconds = [90]
     timer_running = [False]
     timer_display = ft.Text("1:30", size=32, weight=ft.FontWeight.BOLD, color="#00E676",
@@ -712,12 +994,13 @@ def main(page: ft.Page):
 
     def start_timer(e):
         import threading
-        timer_running[0] = True
-        timer_display.color = "#00E676"
-        t = threading.Timer(1.0, timer_tick)
-        t.daemon = True
-        t.start()
-        page.update()
+        if not timer_running[0]:
+            timer_running[0] = True
+            timer_display.color = "#00E676"
+            t = threading.Timer(1.0, timer_tick)
+            t.daemon = True
+            t.start()
+            page.update()
 
     def stop_timer(e):
         timer_running[0] = False
@@ -734,7 +1017,6 @@ def main(page: ft.Page):
         timer_progress.value = 1.0
         page.update()
 
-    # Kalkulator 1RM
     rm_weight = ft.TextField(label="Ciezar (kg)", value="100", width=120,
         keyboard_type=ft.KeyboardType.NUMBER,
         bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=12)
@@ -751,7 +1033,6 @@ def main(page: ft.Page):
         except Exception:
             show_msg("Wpisz poprawne wartosci!", True)
 
-    # Szablony treningow
     template_name_field = ft.TextField(label="Nazwa szablonu", expand=True,
         bgcolor="#1E1E2A", border_color="#3A3A4A", focused_border_color="#00E676", border_radius=12)
     templates_col = ft.Column(spacing=6)
@@ -762,7 +1043,7 @@ def main(page: ft.Page):
             return
         exercises = db.get_workouts_by_date(current_date_value[0])
         if not exercises:
-            show_msg("Brak cwiczen do zapisania!", True)
+            show_msg("Najpierw dodaj dzisiejsze cwiczenia lub utworz pusty szablon!", True)
             return
         ex_list = [{"name": w[2], "sets": w[3], "reps": w[4], "weight": w[5]} for w in exercises]
         db.save_workout_template(template_name_field.value.strip(), ex_list)
@@ -773,19 +1054,23 @@ def main(page: ft.Page):
     def refresh_templates():
         templates_col.controls.clear()
         for t in db.get_workout_templates():
-            ex_names = ", ".join([ex["name"] for ex in t["exercises"][:3]])
+            ex_names = ", ".join([f"{ex['name']} ({ex.get('sets',4)}x{ex.get('reps',8)})" for ex in t["exercises"]])
             templates_col.controls.append(make_card(ft.Row([
                 ft.Column([
                     ft.Text(t["name"], weight=ft.FontWeight.BOLD, size=14, color="#00E676"),
-                    ft.Text(ex_names, size=12, color="#9E9E9E"),
+                    ft.Text(ex_names or "Brak cwiczen", size=12, color="#9E9E9E"),
                 ], expand=True),
                 ft.ElevatedButton("Uzyj", bgcolor="#1565C0", color="white",
                     style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10), elevation=0),
                     on_click=lambda e, tmpl=t: use_template(tmpl)),
-                ft.IconButton(icon="delete_outline", icon_color="#EF5350",
+                ft.IconButton(icon="edit_outlined", icon_color="#42A5F5", icon_size=20,
+                    tooltip="Edytuj szablon",
+                    on_click=lambda e, tmpl=t: open_edit_template_dialog(tmpl)),
+                ft.IconButton(icon="delete_outline", icon_color="#EF5350", icon_size=20,
+                    tooltip="Usun szablon",
                     on_click=lambda e, tid=t["id"]: (
                         db.delete_workout_template(tid), refresh_templates())),
-            ], spacing=8), padding=10))
+            ], spacing=4), padding=10))
         page.update()
 
     def use_template(tmpl):
@@ -815,13 +1100,27 @@ def main(page: ft.Page):
                     ft.Text(w_name, weight=ft.FontWeight.BOLD, size=14),
                     ft.Text(details, size=12, color="#9E9E9E"),
                 ], expand=True, spacing=2),
-            ], spacing=12)))
+                ft.Row([
+                    ft.IconButton(icon="edit_outlined", icon_color="#42A5F5", icon_size=20,
+                        tooltip="Edytuj serie / cwiczenie",
+                        on_click=lambda e, w_obj=w: open_edit_workout_dialog(w_obj)),
+                    ft.IconButton(icon="delete_outline", icon_color="#EF5350", icon_size=20,
+                        tooltip="Usun cwiczenie",
+                        on_click=lambda e, wid=w_id: (db.delete_workout(wid), refresh_workouts())),
+                ], spacing=0),
+            ], spacing=10)))
 
         ai_plans_col.controls.clear()
         for p_id, created, p_name, p_text in db.get_ai_plans():
             ai_plans_col.controls.append(make_card(ft.Column([
-                ft.Text(p_name, weight=ft.FontWeight.BOLD, color="#42A5F5", size=15),
-                ft.Text(created, size=11, color="#666666"),
+                ft.Row([
+                    ft.Column([
+                        ft.Text(p_name, weight=ft.FontWeight.BOLD, color="#42A5F5", size=15),
+                        ft.Text(created, size=11, color="#666666"),
+                    ], expand=True),
+                    ft.IconButton(icon="delete_outline", icon_color="#EF5350", icon_size=20,
+                        on_click=lambda e, pid=p_id: (db.delete_ai_plan(pid), refresh_workouts())),
+                ]),
                 ft.Markdown(p_text),
             ])))
         refresh_templates()
@@ -849,7 +1148,7 @@ def main(page: ft.Page):
             plan_md = ai.generate_workout_plan(ai_goal_input.value.strip(), recent)
             db.save_ai_plan("Plan Treningowy AI", plan_md)
             refresh_workouts()
-            show_msg("Trener AI wygenerowac nowa rozpiske!")
+            show_msg("Trener AI wygenerowal nowa rozpiske!")
         except Exception as ex:
             show_msg(str(ex), True)
         finally:
@@ -866,7 +1165,6 @@ def main(page: ft.Page):
             ft.Row([ex_duration, ex_kcal_field], wrap=True, spacing=8),
             accent_btn("Dodaj do dziennika", "fitness_center", add_workout_click),
         ])),
-        # Timer
         make_card(ft.Column([
             ft.Row([ft.Icon("timer", color="#FFA726", size=20),
                 ft.Text("Timer przerwy miedzy seriami", weight=ft.FontWeight.BOLD, size=15,
@@ -898,7 +1196,6 @@ def main(page: ft.Page):
                     on_click=stop_timer),
             ], spacing=10),
         ])),
-        # Kalkulator 1RM
         make_card(ft.Column([
             ft.Row([ft.Icon("calculate", color="#42A5F5", size=20),
                 ft.Text("Kalkulator 1RM", weight=ft.FontWeight.BOLD, size=15, color="#42A5F5")], spacing=8),
@@ -908,7 +1205,6 @@ def main(page: ft.Page):
                     on_click=calc_1rm)], spacing=10),
             rm_result,
         ])),
-        # Szablony
         make_card(ft.Column([
             ft.Row([ft.Icon("bookmark", color="#AB47BC", size=20),
                 ft.Text("Szablony treningow", weight=ft.FontWeight.BOLD, size=15, color="#AB47BC")], spacing=8),
@@ -931,7 +1227,7 @@ def main(page: ft.Page):
     ], visible=False)
 
     # =========================================================================
-    # ZAKŁADKA 4: POSTĘPY – WAGA + ZDJECIA + BMI + POROWNANIE
+    # ZAKLADKA 4: POSTEPY – WAGA + ZDJECIA + BMI + POROWNANIE
     # =========================================================================
     new_weight_input = ft.TextField(label="Nowy pomiar wagi (kg)", width=180,
         keyboard_type=ft.KeyboardType.NUMBER,
@@ -976,7 +1272,6 @@ def main(page: ft.Page):
 
     def build_comparison():
         comparison_col.controls.clear()
-        from datetime import timedelta
         this_week_start = datetime.now().date() - timedelta(days=datetime.now().weekday())
         last_week_start = this_week_start - timedelta(days=7)
 
@@ -1022,12 +1317,11 @@ def main(page: ft.Page):
     def refresh_progress():
         curr_w = float(db.get_setting("current_weight", "90.0") or 90.0)
         targ_w = float(db.get_setting("target_weight", "70.0") or 70.0)
-        height_cm = float(db.get_setting("height", "175") or 175)
+        height_cm = float(db.get_setting("height", "163") or 163)
         diff = round(curr_w - targ_w, 1)
         weight_status_txt.value = f"{curr_w} kg"
         weight_sub_txt.value = f"Cel: {targ_w} kg  |  Pozostalo: {diff} kg"
 
-        # BMI
         h_m = height_cm / 100
         bmi = round(curr_w / (h_m * h_m), 1)
         if bmi < 18.5: bmi_cat = "Niedowaga"
@@ -1040,14 +1334,15 @@ def main(page: ft.Page):
         build_comparison()
 
         weight_history_col.controls.clear()
-        for w_date, w_val in reversed(db.get_weight_logs()):
+        for log_id, w_date, w_val in reversed(db.get_weight_logs_with_id()):
             weight_history_col.controls.append(make_card(ft.Row([
                 ft.Icon("monitor_weight", color="#9E9E9E", size=18),
-                ft.Text(w_date, color="#BDBDBD", size=13),
+                ft.Text(w_date, color="#BDBDBD", size=13, expand=True),
                 ft.Text(f"{w_val} kg", weight=ft.FontWeight.BOLD, color="#00E676", size=15),
+                ft.IconButton(icon="delete_outline", icon_color="#EF5350", icon_size=18,
+                    on_click=lambda e, lid=log_id: (db.delete_weight_log(lid), refresh_progress())),
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), padding=10))
 
-        # Zdjecia sylwetki
         photos_col.controls.clear()
         for p_id, p_date, p_path, p_note in db.get_progress_photos():
             photos_col.controls.append(make_card(ft.Row([
@@ -1074,7 +1369,6 @@ def main(page: ft.Page):
         except ValueError:
             show_msg("Wpisz poprawna liczbe!", True)
 
-    # Zdjecia sylwetki
     photo_note_field = ft.TextField(label="Opis zdjecia (opcjonalnie)", expand=True,
         bgcolor="#1E1E2A", border_color="#3A3A4A", focused_border_color="#00E676", border_radius=12)
     selected_progress_photo = {"path": None}
@@ -1158,9 +1452,9 @@ def main(page: ft.Page):
     ], visible=False)
 
     # =========================================================================
-    # ZAKŁADKA 5: AI CHAT
+    # ZAKLADKA 5: AI CHAT
     # =========================================================================
-    chat_messages_col = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, height=400)
+    chat_messages_col = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, height=380)
     chat_input = ft.TextField(label="Zapytaj dietetyka AI...", expand=True,
         multiline=True, min_lines=1, max_lines=3,
         bgcolor="#1E1E2A", border_color="#3A3A4A", focused_border_color="#00E676", border_radius=12)
@@ -1247,20 +1541,20 @@ def main(page: ft.Page):
     ], visible=False)
 
     # =========================================================================
-    # ZAKŁADKA 6: USTAWIENIA
+    # ZAKLADKA 6: PROFIL I OPCJE (USTAWIENIA + BACKUP MIEDZY TELEFONAMI)
     # =========================================================================
     api_key_field = ft.TextField(label="Klucz Google Gemini API",
         password=True, can_reveal_password=True, value=db.get_setting("api_key"),
         bgcolor="#1E1E2A", border_color="#3A3A4A", focused_border_color="#00E676", border_radius=12)
     model_field = ft.TextField(label="Nazwa modelu Gemini",
-        value=db.get_setting("model_name", "gemini-3.8-flash"),
+        value=db.get_setting("model_name", "gemini-2.5-flash"),
         bgcolor="#1E1E2A", border_color="#3A3A4A", focused_border_color="#00E676", border_radius=12)
     profile_name = ft.TextField(label="Imie", value=db.get_setting("profile_name", ""),
         bgcolor="#1E1E2A", border_color="#3A3A4A", focused_border_color="#00E676", border_radius=12)
-    profile_age = ft.TextField(label="Wiek (lata)", value=db.get_setting("profile_age", "25"),
+    profile_age = ft.TextField(label="Wiek (lata)", value=db.get_setting("profile_age", "24"),
         keyboard_type=ft.KeyboardType.NUMBER, width=120,
         bgcolor="#1E1E2A", border_color="#3A3A4A", focused_border_color="#00E676", border_radius=12)
-    profile_height = ft.TextField(label="Wzrost (cm)", value=db.get_setting("height", "175"),
+    profile_height = ft.TextField(label="Wzrost (cm)", value=db.get_setting("height", "163"),
         keyboard_type=ft.KeyboardType.NUMBER, width=120,
         bgcolor="#1E1E2A", border_color="#3A3A4A", focused_border_color="#00E676", border_radius=12)
     profile_gender = ft.Dropdown(label="Plec", value=db.get_setting("profile_gender", "Mezczyzna"),
@@ -1292,11 +1586,36 @@ def main(page: ft.Page):
         keyboard_type=ft.KeyboardType.NUMBER,
         bgcolor="#1E1E2A", border_color="#3A3A4A", focused_border_color="#00E676", border_radius=12)
 
+    backup_json_tf = ft.TextField(
+        label="Wklej tutaj skopiowany kod backupu JSON (do importu)",
+        multiline=True, min_lines=2, max_lines=4,
+        bgcolor="#1E1E2A", border_color="#3A3A4A", border_radius=12)
+
+    def export_backup_click(e):
+        data_str = db.export_backup_json()
+        page.set_clipboard(data_str)
+        show_msg("Skopiowano backup bazy do schowka! Mozesz przeslac go na drugi telefon.")
+
+    def import_backup_click(e):
+        if not backup_json_tf.value.strip():
+            show_msg("Wklej najpierw tekst backupu!", True)
+            return
+        try:
+            db.import_backup_json(backup_json_tf.value.strip())
+            backup_json_tf.value = ""
+            refresh_diet()
+            refresh_recipes_and_shopping()
+            refresh_workouts()
+            refresh_progress()
+            show_msg("Zaimportowano dane pomyslnie!")
+        except Exception as ex:
+            show_msg(f"Blad importu: {ex}", True)
+
     def calc_bmr():
         try:
-            age = int(profile_age.value or 25)
-            height = float(profile_height.value or 175)
-            weight = float(db.get_setting("current_weight", "80") or 80)
+            age = int(profile_age.value or 24)
+            height = float(profile_height.value or 163)
+            weight = float(db.get_setting("current_weight", "90") or 90)
             gender = profile_gender.value
             bmr = (10 * weight + 6.25 * height - 5 * age + 5) if gender == "Mezczyzna" \
                   else (10 * weight + 6.25 * height - 5 * age - 161)
@@ -1339,12 +1658,12 @@ def main(page: ft.Page):
         show_msg("Ustawienia zapisane!")
 
     settings_view = ft.Column([
-        make_header("Ustawienia"),
+        make_header("Profil i Ustawienia"),
         make_card(ft.Column([
             ft.Row([ft.Icon("key", color="#00E676", size=20),
                 ft.Text("Konfiguracja AI", weight=ft.FontWeight.BOLD, size=15)], spacing=8),
             api_key_field, model_field,
-            ft.Text("Modele: gemini-3.8-flash | gemini-2.0-flash-exp | gemini-1.5-flash",
+            ft.Text("Zalecany model: gemini-2.5-flash | gemini-2.0-flash",
                 size=11, color="#666666", italic=True),
         ])),
         make_card(ft.Column([
@@ -1366,12 +1685,25 @@ def main(page: ft.Page):
             ft.Row([t_prot_field, t_fat_field, t_carb_field], wrap=True, spacing=8),
             t_weight_field, t_water_field,
         ])),
-        ft.Container(padding=ft.padding.symmetric(horizontal=12, vertical=8),
+        ft.Container(padding=ft.padding.symmetric(horizontal=12, vertical=4),
             content=accent_btn("Zapisz ustawienia", "save", save_settings_click)),
+        make_card(ft.Column([
+            ft.Row([ft.Icon("sync_alt", color="#AB47BC", size=20),
+                ft.Text("Przenoszenie danych miedzy telefonami", weight=ft.FontWeight.BOLD, size=15, color="#AB47BC")], spacing=8),
+            ft.Text("Skopiuj cala baze (posilki, przepisy, treningi, szablony) i wklej na drugim telefonie:",
+                size=12, color="#9E9E9E"),
+            ft.ElevatedButton("Kopiuj Backup Bazy", icon="content_copy", bgcolor="#6A1B9A", color="white",
+                style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10), elevation=0),
+                on_click=export_backup_click),
+            backup_json_tf,
+            ft.ElevatedButton("Importuj wklejony Backup", icon="download", bgcolor="#1565C0", color="white",
+                style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10), elevation=0),
+                on_click=import_backup_click),
+        ])),
     ], visible=False)
 
     # =========================================================================
-    # NAWIGACJA – 6 ZAKŁADEK
+    # NAWIGACJA – 6 ZAKLADEK (ZOPTYMALIZOWANE ETYKIETY + SAFEAREA)
     # =========================================================================
     views = [diet_view, recipes_view, workout_view, progress_view, chat_view, settings_view]
 
@@ -1395,11 +1727,16 @@ def main(page: ft.Page):
             ft.NavigationBarDestination(icon="fitness_center_outlined", selected_icon="fitness_center", label="Trening"),
             ft.NavigationBarDestination(icon="trending_up", label="Postepy"),
             ft.NavigationBarDestination(icon="chat_outlined", selected_icon="chat", label="AI Chat"),
-            ft.NavigationBarDestination(icon="settings_outlined", selected_icon="settings", label="Ustawienia"),
+            ft.NavigationBarDestination(icon="settings_outlined", selected_icon="settings", label="Opcje"),
         ])
 
     build_calendar()
-    page.add(loading_bar, *views)
+    page.add(
+        ft.SafeArea(
+            content=ft.Column([loading_bar, *views], spacing=0),
+            expand=True
+        )
+    )
     refresh_diet()
 
 
